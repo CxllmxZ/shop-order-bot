@@ -1,0 +1,9 @@
+{
+  "d1_databases": [
+    {
+      "binding": "shop_order_db",
+      "database_name": "shop-order-db",
+      "database_id": "73b360c3-790f-4ff5-9bd0-7f2bde8b00b7"
+    }
+  ]
+}
