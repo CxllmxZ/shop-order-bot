@@ -1,0 +1,5 @@
+Channel access token:
+ZExeKGqLzpdhn67oZS/75n/vh47zNpKDQPMVBKQQ2D0d+uiN4qU1aie7G8QXQVXN0xDxTtpVIp73JHqx74HubCGPbPVqsaEg941K+Erm1u26hCJf3MC/dpJAUGanXQz70b4eXpA4IdMil5Q/fgc1qwdB04t89/1O/w1cDnyilFU=
+
+Channel secret:
+2ecc32517ac13dcb6289eeae53d928e5
