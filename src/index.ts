@@ -1,5 +1,5 @@
 export interface Env {
-	DB: D1Database;
+	shop_order_db: D1Database;
 	LINE_CHANNEL_SECRET: string;
 	LINE_CHANNEL_ACCESS_TOKEN: string;
 }
@@ -16,6 +16,16 @@ export default {
 		// LINE Webhook
 		if (request.method === 'POST' && url.pathname === '/webhook') {
 			return handleLineWebhook(request, env);
+		} 
+
+		// LIFF Order Submit ← เพิ่มใหม่
+		if (request.method === 'POST' && url.pathname === '/order') {
+			return handleOrderSubmit(request, env);
+		}
+
+		// CORS preflight ← เพิ่มใหม่
+		if (request.method === 'OPTIONS') {
+			return handleCors();
 		}
 
 		return new Response('Not Found', { status: 404 });
@@ -121,8 +131,8 @@ async function handleTextMessage(event: any, env: Env): Promise<void> {
 	// คำสั่งจาก Rich Menu (มี # ขึ้นต้น)
 	switch (text) {
 		case '#สั่งสินค้า':
-			await replyMessage(replyToken, '🛒 กำลังพาไปหน้าสั่งสินค้า...\n\n(เดี๋ยวจะใส่ลิงก์ LIFF ที่นี่)', env);
-			return;
+			await replyFlex(replyToken, getOrderButtonFlex(), env);
+		return;
 
 		case '#ออเดอร์ของฉัน':
 			await replyMessage(replyToken, '📋 ฟีเจอร์นี้กำลังพัฒนา...', env);
@@ -139,6 +149,201 @@ async function handleTextMessage(event: any, env: Env): Promise<void> {
 
 	// ข้อความปกติ (ไม่ใช่คำสั่ง) — echo ไว้ก่อน
 	await replyMessage(replyToken, `Echo: ${text}`, env);
+}
+
+// CORS headers (ให้ LIFF เรียก Worker ได้)
+function corsHeaders() {
+	return {
+		'Access-Control-Allow-Origin': '*',
+		'Access-Control-Allow-Methods': 'POST, OPTIONS',
+		'Access-Control-Allow-Headers': 'Content-Type',
+	};
+}
+
+function handleCors(): Response {
+	return new Response(null, { status: 204, headers: corsHeaders() });
+}
+
+// รับ order จาก LIFF
+async function handleOrderSubmit(request: Request, env: Env): Promise<Response> {
+	try {
+		const data = await request.json() as {
+			userId: string;
+			displayName: string;
+			product: string;
+			quantity: number;
+			totalPrice: number;
+			name: string;
+			phone: string;
+			address: string;
+		};
+
+		// Validate
+		if (!data.userId || !data.product || !data.quantity || !data.name || !data.phone || !data.address) {
+			return jsonResponse({ error: 'Missing required fields' }, 400);
+		}
+
+		// INSERT ลง D1
+		const result = await env.shop_order_db.prepare(
+			`INSERT INTO orders (
+				customer_user_id, customer_name, customer_phone, customer_address,
+				product, quantity, total_price, status, created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		).bind(
+			data.userId,
+			data.name,
+			data.phone,
+			data.address,
+			data.product,
+			data.quantity,
+			data.totalPrice,
+			'pending',
+			Date.now()
+		).run();
+
+		const orderId = result.meta.last_row_id;
+
+		// Push Flex ยืนยันให้ลูกค้า
+		await pushFlex(data.userId, getOrderConfirmFlex(orderId, data), env);
+
+		return jsonResponse({ success: true, orderId }, 200);
+	} catch (err: any) {
+		console.log('Order submit error:', err.message);
+		return jsonResponse({ error: err.message }, 500);
+	}
+}
+
+// Helper สำหรับ JSON response
+function jsonResponse(data: any, status: number): Response {
+	return new Response(JSON.stringify(data), {
+		status,
+		headers: {
+			'Content-Type': 'application/json',
+			...corsHeaders(),
+		},
+	});
+}
+
+// Push Flex ไปยัง user (ใช้ตอน submit form เสร็จ)
+async function pushFlex(userId: string, flexContent: any, env: Env): Promise<void> {
+	const response = await fetch('https://api.line.me/v2/bot/message/push', {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			Authorization: `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}`,
+		},
+		body: JSON.stringify({
+			to: userId,
+			messages: [flexContent],
+		}),
+	});
+
+	if (!response.ok) {
+		const errorText = await response.text();
+		console.log('LINE Push API error:', response.status, errorText);
+	}
+}
+
+// Flex ยืนยันออเดอร์
+function getOrderConfirmFlex(orderId: number | bigint, data: any) {
+	return {
+		type: 'flex',
+		altText: `ยืนยันออเดอร์ #${orderId}`,
+		contents: {
+			type: 'bubble',
+			header: {
+				type: 'box',
+				layout: 'vertical',
+				backgroundColor: '#06C755',
+				paddingAll: '15px',
+				contents: [
+					{
+						type: 'text',
+						text: '✅ ได้รับออเดอร์แล้ว',
+						color: '#FFFFFF',
+						weight: 'bold',
+						size: 'lg',
+					},
+					{
+						type: 'text',
+						text: `เลขออเดอร์ #${orderId}`,
+						color: '#FFFFFF',
+						size: 'sm',
+						margin: 'sm',
+					},
+				],
+			},
+			body: {
+				type: 'box',
+				layout: 'vertical',
+				spacing: 'sm',
+				contents: [
+					{
+						type: 'box',
+						layout: 'horizontal',
+						contents: [
+							{ type: 'text', text: 'สินค้า', size: 'sm', color: '#888888', flex: 2 },
+							{ type: 'text', text: data.product, size: 'sm', flex: 3, wrap: true },
+						],
+					},
+					{
+						type: 'box',
+						layout: 'horizontal',
+						contents: [
+							{ type: 'text', text: 'จำนวน', size: 'sm', color: '#888888', flex: 2 },
+							{ type: 'text', text: `${data.quantity} ชิ้น`, size: 'sm', flex: 3 },
+						],
+					},
+					{
+						type: 'box',
+						layout: 'horizontal',
+						contents: [
+							{ type: 'text', text: 'ผู้สั่ง', size: 'sm', color: '#888888', flex: 2 },
+							{ type: 'text', text: data.name, size: 'sm', flex: 3, wrap: true },
+						],
+					},
+					{
+						type: 'box',
+						layout: 'horizontal',
+						contents: [
+							{ type: 'text', text: 'เบอร์', size: 'sm', color: '#888888', flex: 2 },
+							{ type: 'text', text: data.phone, size: 'sm', flex: 3 },
+						],
+					},
+					{ type: 'separator', margin: 'md' },
+					{
+						type: 'box',
+						layout: 'horizontal',
+						margin: 'md',
+						contents: [
+							{ type: 'text', text: 'ยอดรวม', weight: 'bold', flex: 2 },
+							{
+								type: 'text',
+								text: `${data.totalPrice.toLocaleString()} ฿`,
+								weight: 'bold',
+								color: '#06C755',
+								align: 'end',
+								flex: 3,
+							},
+						],
+					},
+				],
+			},
+			footer: {
+				type: 'box',
+				layout: 'vertical',
+				contents: [
+					{
+						type: 'text',
+						text: 'เราจะติดต่อกลับเร็วๆ นี้',
+						size: 'xs',
+						color: '#888888',
+						align: 'center',
+					},
+				],
+			},
+		},
+	};
 }
 
 // Flex ทักทาย
@@ -221,6 +426,55 @@ function getGreetingFlex() {
 							label: '📋 ดูออเดอร์ของฉัน',
 							data: 'action=my_orders',
 							displayText: 'ดูออเดอร์ของฉัน',
+						},
+					},
+				],
+			},
+		},
+	};
+}
+
+// Flex ปุ่มเปิด LIFF
+function getOrderButtonFlex() {
+	return {
+		type: 'flex',
+		altText: 'กดเพื่อเปิดหน้าสั่งสินค้า',
+		contents: {
+			type: 'bubble',
+			body: {
+				type: 'box',
+				layout: 'vertical',
+				spacing: 'md',
+				contents: [
+					{
+						type: 'text',
+						text: '🛒 สั่งสินค้า',
+						weight: 'bold',
+						size: 'xl',
+						align: 'center',
+					},
+					{
+						type: 'text',
+						text: 'กดปุ่มด้านล่างเพื่อเปิดฟอร์มสั่งซื้อ',
+						size: 'sm',
+						color: '#888888',
+						align: 'center',
+						wrap: true,
+					},
+				],
+			},
+			footer: {
+				type: 'box',
+				layout: 'vertical',
+				contents: [
+					{
+						type: 'button',
+						style: 'primary',
+						color: '#06C755',
+						action: {
+							type: 'uri',
+							label: 'เปิดฟอร์มสั่งสินค้า',
+							uri: 'https://liff.line.me/2010382835-nqgQ8M2r',
 						},
 					},
 				],

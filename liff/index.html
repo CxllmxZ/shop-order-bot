@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>สั่งสินค้า</title>
+	<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+	<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+	<div class="max-w-md mx-auto p-4">
+		<header class="mb-6 text-center">
+			<h1 class="text-2xl font-bold text-gray-800">🛒 สั่งสินค้า</h1>
+			<p class="text-sm text-gray-500 mt-1">กรอกข้อมูลให้ครบถ้วน</p>
+		</header>
+
+		<div id="loading" class="text-center py-8">
+			<p class="text-gray-500">กำลังโหลด...</p>
+		</div>
+
+		<form id="orderForm" class="hidden space-y-4 bg-white p-5 rounded-lg shadow-sm">
+			<div>
+				<label class="block text-sm font-medium text-gray-700 mb-1">สินค้า *</label>
+				<select id="product" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500">
+					<option value="">-- เลือกสินค้า --</option>
+					<option value="เสื้อยืดสีขาว|250">เสื้อยืดสีขาว (250฿)</option>
+					<option value="เสื้อยืดสีดำ|250">เสื้อยืดสีดำ (250฿)</option>
+					<option value="กางเกงยีนส์|590">กางเกงยีนส์ (590฿)</option>
+				</select>
+			</div>
+
+			<div>
+				<label class="block text-sm font-medium text-gray-700 mb-1">จำนวน *</label>
+				<input type="number" id="quantity" min="1" value="1" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500" />
+			</div>
+
+			<div>
+				<label class="block text-sm font-medium text-gray-700 mb-1">ชื่อ-นามสกุล *</label>
+				<input type="text" id="name" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500" />
+			</div>
+
+			<div>
+				<label class="block text-sm font-medium text-gray-700 mb-1">เบอร์โทร *</label>
+				<input type="tel" id="phone" required pattern="[0-9]{9,10}" placeholder="08xxxxxxxx" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500" />
+			</div>
+
+			<div>
+				<label class="block text-sm font-medium text-gray-700 mb-1">ที่อยู่จัดส่ง *</label>
+				<textarea id="address" required rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"></textarea>
+			</div>
+
+			<div class="bg-green-50 p-3 rounded-md">
+				<div class="flex justify-between text-sm">
+					<span class="text-gray-600">ยอดรวม</span>
+					<span id="totalPrice" class="font-bold text-green-700 text-lg">0 ฿</span>
+				</div>
+			</div>
+
+			<button type="submit" id="submitBtn" class="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 rounded-md transition">
+				ยืนยันสั่งซื้อ
+			</button>
+		</form>
+
+		<div id="result" class="hidden text-center py-8">
+			<div class="text-5xl mb-3">✅</div>
+			<p class="text-lg font-medium text-gray-800">สั่งซื้อสำเร็จ!</p>
+			<p class="text-sm text-gray-500 mt-1">กำลังกลับไปยังแชท...</p>
+		</div>
+	</div>
+
+	<script>
+		const LIFF_ID = '2010382835-nqgQ8M2r';
+		const WORKER_URL = 'https://shop-order-bot.shop-order-bot.workers.dev/order';
+
+		let userProfile = null;
+
+		// คำนวณราคารวม
+		function updateTotal() {
+			const productVal = document.getElementById('product').value;
+			const qty = parseInt(document.getElementById('quantity').value) || 0;
+			const price = productVal ? parseInt(productVal.split('|')[1]) : 0;
+			document.getElementById('totalPrice').textContent = (price * qty).toLocaleString() + ' ฿';
+		}
+
+		document.getElementById('product').addEventListener('change', updateTotal);
+		document.getElementById('quantity').addEventListener('input', updateTotal);
+
+		// Init LIFF
+		async function initLiff() {
+			try {
+				await liff.init({ liffId: LIFF_ID });
+
+				if (!liff.isLoggedIn()) {
+					liff.login();
+					return;
+				}
+
+				userProfile = await liff.getProfile();
+
+				document.getElementById('loading').classList.add('hidden');
+				document.getElementById('orderForm').classList.remove('hidden');
+			} catch (err) {
+				document.getElementById('loading').innerHTML =
+					'<p class="text-red-500">เกิดข้อผิดพลาด: ' + err.message + '</p>';
+			}
+		}
+
+		// Submit form
+		document.getElementById('orderForm').addEventListener('submit', async (e) => {
+			e.preventDefault();
+
+			const submitBtn = document.getElementById('submitBtn');
+			submitBtn.disabled = true;
+			submitBtn.textContent = 'กำลังส่ง...';
+
+			const productVal = document.getElementById('product').value;
+			const [productName, productPrice] = productVal.split('|');
+			const qty = parseInt(document.getElementById('quantity').value);
+
+			const orderData = {
+				userId: userProfile.userId,
+				displayName: userProfile.displayName,
+				product: productName,
+				quantity: qty,
+				totalPrice: parseInt(productPrice) * qty,
+				name: document.getElementById('name').value,
+				phone: document.getElementById('phone').value,
+				address: document.getElementById('address').value,
+			};
+
+			try {
+				const res = await fetch(WORKER_URL, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(orderData),
+				});
+
+				if (!res.ok) throw new Error('Submit failed');
+
+				document.getElementById('orderForm').classList.add('hidden');
+				document.getElementById('result').classList.remove('hidden');
+
+				setTimeout(() => {
+					if (liff.isInClient()) liff.closeWindow();
+				}, 2000);
+			} catch (err) {
+				alert('เกิดข้อผิดพลาด: ' + err.message);
+				submitBtn.disabled = false;
+				submitBtn.textContent = 'ยืนยันสั่งซื้อ';
+			}
+		});
+
+		initLiff();
+	</script>
+</body>
+</html>
