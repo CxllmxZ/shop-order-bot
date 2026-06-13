@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ร้านของฉัน · จัดการออเดอร์</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #FAFAF7;
+    --bg-elev: #FFFFFF;
+    --border: #ECEAE4;
+    --ink: #111111;
+    --ink-2: #4B5563;
+    --ink-3: #9CA3AF;
+    --line-green: #06C755;
+    --line-green-soft: #E8F8EE;
+  }
+  html, body { font-family: 'IBM Plex Sans Thai', system-ui, sans-serif; background: var(--bg); color: var(--ink); }
+  .mono { font-family: 'IBM Plex Mono', monospace; font-feature-settings: "tnum"; }
+  .num { font-feature-settings: "tnum"; font-variant-numeric: tabular-nums; }
+
+  .s-pending    { background:#FEF3C7; color:#92400E; }
+  .s-confirmed  { background:#DBEAFE; color:#1E40AF; }
+  .s-shipped    { background:#EDE9FE; color:#5B21B6; }
+  .s-completed  { background:#D1FAE5; color:#065F46; }
+  .s-cancelled  { background:#F3F4F6; color:#6B7280; }
+
+  .dot-pending   { background:#F59E0B; }
+  .dot-confirmed { background:#3B82F6; }
+  .dot-shipped   { background:#8B5CF6; }
+  .dot-completed { background:#10B981; }
+  .dot-cancelled { background:#9CA3AF; }
+
+  .no-scrollbar::-webkit-scrollbar { display:none; }
+  .no-scrollbar { -ms-overflow-style:none; scrollbar-width:none; }
+
+  @keyframes softpulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.0); }
+    50%      { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0.12); }
+  }
+  .pulse-pending { animation: softpulse 2.4s ease-in-out infinite; }
+
+  .toast-enter { transform: translateY(-20px); opacity: 0; }
+  .toast-show  { transform: translateY(0);     opacity: 1; transition: all .25s ease; }
+
+  .sheet-backdrop { background: rgba(17,17,17,.45); }
+  @keyframes slideup { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .sheet-anim { animation: slideup .25s cubic-bezier(.2,.8,.2,1); }
+
+  button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 2px solid var(--line-green);
+    outline-offset: 2px;
+  }
+
+  /* Skeleton loader */
+  @keyframes shimmer {
+    0%   { background-position: -1000px 0; }
+    100% { background-position: 1000px 0; }
+  }
+  .skeleton {
+    background: linear-gradient(90deg, #F3F2EE 25%, #ECEAE4 50%, #F3F2EE 75%);
+    background-size: 1000px 100%;
+    animation: shimmer 1.6s infinite linear;
+    border-radius: 6px;
+  }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- =================== LOADING (initial) =================== -->
+<div id="initialLoading" class="fixed inset-0 z-50 flex items-center justify-center bg-[var(--bg)]">
+  <div class="text-center">
+    <div class="inline-block w-8 h-8 border-3 border-[var(--line-green)] border-t-transparent rounded-full animate-spin"></div>
+    <div class="mt-3 text-[14px] text-[var(--ink-2)]">กำลังโหลด...</div>
+  </div>
+</div>
+
+<!-- =================== ERROR (auth fail / etc) =================== -->
+<div id="errorScreen" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-[var(--bg)] px-6">
+  <div class="text-center max-w-sm">
+    <div class="w-16 h-16 mx-auto rounded-full bg-red-50 flex items-center justify-center">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+    </div>
+    <div id="errorTitle" class="mt-4 text-[16px] font-semibold">ไม่สามารถเข้าใช้งานได้</div>
+    <div id="errorMsg" class="mt-2 text-[14px] text-[var(--ink-2)] leading-relaxed">กรุณาลงทะเบียนเป็น admin ก่อนใช้งาน</div>
+  </div>
+</div>
+
+<!-- =================== HEADER =================== -->
+<header class="sticky top-0 z-30 bg-[var(--bg)]/85 backdrop-blur border-b border-[var(--border)]">
+  <div class="max-w-5xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg bg-[var(--line-green)] flex items-center justify-center">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
+          <path d="M3 6h18"/>
+          <path d="M16 10a4 4 0 0 1-8 0"/>
+        </svg>
+      </div>
+      <div>
+        <div class="font-semibold text-[15px] leading-tight">ร้านของฉัน</div>
+        <div class="text-[12px] text-[var(--ink-3)] leading-tight" id="adminName">จัดการออเดอร์</div>
+      </div>
+    </div>
+    <button id="refreshBtn" class="w-9 h-9 rounded-lg hover:bg-black/5 flex items-center justify-center" aria-label="รีเฟรช">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-4 sm:px-6 pb-24">
+
+  <!-- =================== STATS =================== -->
+  <section class="pt-5 pb-4">
+    <div class="grid grid-cols-12 gap-3">
+      <div id="pendingCard" class="col-span-12 sm:col-span-6 rounded-2xl bg-white border border-[var(--border)] p-5">
+        <div class="flex items-center gap-2 text-[13px] text-[var(--ink-2)]">
+          <span class="inline-block w-2 h-2 rounded-full dot-pending"></span>
+          รอดำเนินการ
+        </div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span class="num text-4xl font-bold tracking-tight" id="statPending">-</span>
+          <span class="text-[var(--ink-3)] text-sm">ออเดอร์</span>
+        </div>
+        <div class="mt-3 text-[12.5px] text-[var(--ink-3)]" id="oldestPendingWrap" style="display:none;">
+          เก่าที่สุด <span id="oldestPending" class="text-[var(--ink-2)] font-medium">-</span>
+        </div>
+      </div>
+
+      <div class="col-span-6 sm:col-span-3 rounded-2xl bg-white border border-[var(--border)] p-4">
+        <div class="text-[13px] text-[var(--ink-2)]">วันนี้</div>
+        <div class="mt-1 num text-2xl font-semibold"><span id="statTodayCount">-</span><span class="text-sm text-[var(--ink-3)] font-normal"> ออเดอร์</span></div>
+        <div class="mt-1 num text-[13px] text-[var(--ink-3)]">฿<span id="statTodayTotal">-</span></div>
+      </div>
+
+      <div class="col-span-6 sm:col-span-3 rounded-2xl bg-white border border-[var(--border)] p-4">
+        <div class="text-[13px] text-[var(--ink-2)]">เดือนนี้</div>
+        <div class="mt-1 num text-2xl font-semibold">฿<span id="statMonthTotal">-</span></div>
+        <div class="mt-1 num text-[13px] text-[var(--ink-3)]"><span id="statMonthCount">-</span> ออเดอร์</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================== FILTER BAR =================== -->
+  <section class="sticky top-[57px] z-20 bg-[var(--bg)] -mx-4 sm:-mx-6 px-4 sm:px-6 py-3 border-b border-[var(--border)]">
+    <div class="flex gap-2 overflow-x-auto no-scrollbar -mx-1 px-1" id="statusPills"></div>
+
+    <div class="mt-3 flex gap-2">
+      <div class="relative flex-1">
+        <svg class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ink-3)]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input id="searchInput" type="search" placeholder="ค้นหาชื่อ, เบอร์, เลขออเดอร์"
+               class="w-full bg-white border border-[var(--border)] rounded-xl pl-9 pr-3 py-2.5 text-[14px] placeholder:text-[var(--ink-3)]">
+      </div>
+      <select id="sortSelect" class="bg-white border border-[var(--border)] rounded-xl px-3 py-2.5 text-[14px] text-[var(--ink-2)]">
+        <option value="new">ใหม่สุด</option>
+        <option value="old">เก่าสุด</option>
+        <option value="high">ยอดสูง</option>
+        <option value="low">ยอดต่ำ</option>
+      </select>
+    </div>
+  </section>
+
+  <!-- =================== ORDER LIST =================== -->
+  <section class="pt-4 space-y-3" id="orderList"></section>
+
+  <!-- Loading skeleton -->
+  <div id="listLoading" class="hidden pt-4 space-y-3">
+    <div class="bg-white border border-[var(--border)] rounded-2xl p-4 sm:p-5">
+      <div class="skeleton h-3 w-32"></div>
+      <div class="skeleton h-5 w-48 mt-3"></div>
+      <div class="skeleton h-4 w-full mt-2"></div>
+      <div class="skeleton h-9 w-full mt-4"></div>
+    </div>
+    <div class="bg-white border border-[var(--border)] rounded-2xl p-4 sm:p-5">
+      <div class="skeleton h-3 w-32"></div>
+      <div class="skeleton h-5 w-48 mt-3"></div>
+      <div class="skeleton h-4 w-full mt-2"></div>
+      <div class="skeleton h-9 w-full mt-4"></div>
+    </div>
+  </div>
+
+  <!-- Empty state -->
+  <div id="emptyState" class="hidden text-center py-20">
+    <div class="text-[15px] font-medium text-[var(--ink-2)]">ไม่มีออเดอร์ในหมวดนี้</div>
+    <div class="text-[13px] text-[var(--ink-3)] mt-1">ลองเปลี่ยนตัวกรองหรือค้นหาด้วยคำอื่น</div>
+  </div>
+
+  <!-- Load more -->
+  <div id="loadMoreWrap" class="hidden text-center pt-6">
+    <button id="loadMoreBtn" class="px-5 py-2.5 bg-white border border-[var(--border)] rounded-xl text-[14px] text-[var(--ink-2)] hover:bg-black/[.03] transition">
+      โหลดเพิ่มเติม
+    </button>
+  </div>
+
+</main>
+
+<!-- =================== TOAST =================== -->
+<div id="toast" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 toast-enter pointer-events-none">
+  <div id="toastBox" class="bg-[var(--ink)] text-white text-[14px] px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2">
+    <svg id="toastIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>
+    <span id="toastMsg">อัปเดตสถานะแล้ว</span>
+  </div>
+</div>
+
+<!-- =================== DETAIL MODAL =================== -->
+<div id="modal" class="hidden fixed inset-0 z-40">
+  <div class="absolute inset-0 sheet-backdrop" data-close></div>
+  <div class="absolute bottom-0 left-0 right-0 sm:relative sm:max-w-md sm:mx-auto sm:mt-16 sm:rounded-2xl rounded-t-2xl bg-white sheet-anim sm:animate-none overflow-hidden">
+    <div class="sm:hidden flex justify-center pt-2.5 pb-1">
+      <div class="w-10 h-1 rounded-full bg-[var(--ink-3)]/40"></div>
+    </div>
+    <div id="modalBody" class="px-5 pb-5 pt-3 max-h-[80vh] overflow-y-auto"></div>
+  </div>
+</div>
+
+<!-- =================== STATUS PICKER SHEET =================== -->
+<div id="statusSheet" class="hidden fixed inset-0 z-40">
+  <div class="absolute inset-0 sheet-backdrop" data-close></div>
+  <div class="absolute bottom-0 left-0 right-0 sm:relative sm:max-w-sm sm:mx-auto sm:mt-32 sm:rounded-2xl rounded-t-2xl bg-white sheet-anim sm:animate-none">
+    <div class="sm:hidden flex justify-center pt-2.5 pb-1">
+      <div class="w-10 h-1 rounded-full bg-[var(--ink-3)]/40"></div>
+    </div>
+    <div class="px-5 pt-3 pb-2">
+      <div class="text-[15px] font-semibold">เปลี่ยนสถานะ</div>
+      <div class="text-[12.5px] text-[var(--ink-3)]" id="statusSheetOrderInfo"></div>
+    </div>
+    <div id="statusOptions" class="pb-3"></div>
+  </div>
+</div>
+
+<script>
+// ========== CONFIG ==========
+const LIFF_ID = '2010382835-4SH11vbP';
+const API_BASE = 'https://shop-order-bot.shop-order-bot.workers.dev';
+
+// ========== STATUS DEFINITIONS ==========
+const STATUSES = {
+  pending:   { label: 'รอดำเนินการ', class: 's-pending',   dot: 'dot-pending' },
+  confirmed: { label: 'ยืนยันแล้ว',  class: 's-confirmed', dot: 'dot-confirmed' },
+  shipped:   { label: 'จัดส่งแล้ว',  class: 's-shipped',   dot: 'dot-shipped' },
+  completed: { label: 'เสร็จสิ้น',    class: 's-completed', dot: 'dot-completed' },
+  cancelled: { label: 'ยกเลิก',       class: 's-cancelled', dot: 'dot-cancelled' },
+};
+
+const TRANSITIONS = {
+  pending:   ['confirmed', 'cancelled'],
+  confirmed: ['shipped', 'cancelled'],
+  shipped:   ['completed'],
+  completed: [],
+  cancelled: [],
+};
+
+// ========== STATE ==========
+const state = {
+  userId: null,
+  adminName: '',
+  filter: 'all',
+  sort: 'new',
+  search: '',
+  page: 1,
+  limit: 20,
+  orders: [],
+  hasMore: false,
+  counts: {},
+  loading: false,
+};
+
+// ========== HELPERS ==========
+function fmtMoney(n) { return (n || 0).toLocaleString('th-TH'); }
+function timeAgo(ts) {
+  const diff = (Date.now() - ts) / 1000;
+  if (diff < 60)        return 'เมื่อสักครู่';
+  if (diff < 3600)      return Math.floor(diff/60) + ' นาทีที่แล้ว';
+  if (diff < 86400)     return Math.floor(diff/3600) + ' ชั่วโมงที่แล้ว';
+  if (diff < 86400 * 7) return Math.floor(diff/86400) + ' วันที่แล้ว';
+  return new Date(ts).toLocaleDateString('th-TH', { day:'numeric', month:'short' });
+}
+function debounce(fn, ms) {
+  let t;
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+
+// ========== API ==========
+async function api(path, options = {}) {
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-LINE-User-Id': state.userId,
+    ...(options.headers || {}),
+  };
+  const res = await fetch(API_BASE + path, { ...options, headers });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+// ========== INIT ==========
+async function init() {
+  try {
+    await liff.init({ liffId: LIFF_ID });
+
+    if (!liff.isLoggedIn()) {
+      liff.login();
+      return;
+    }
+
+    const profile = await liff.getProfile();
+    state.userId = profile.userId;
+
+    // Verify admin
+    let me;
+    try {
+      me = await api('/admin/me');
+    } catch (err) {
+      showError('คุณไม่มีสิทธิ์เข้าใช้งาน', 'กรุณาลงทะเบียนเป็น admin ก่อน\nโดยส่งข้อความ "ลงทะเบียนแอดมิน [รหัส]" ในแชทบอท');
+      return;
+    }
+
+    state.adminName = me.name;
+    document.getElementById('adminName').textContent = me.name;
+
+    document.getElementById('initialLoading').classList.add('hidden');
+
+    // Load data
+    await Promise.all([loadStats(), loadOrders(true)]);
+    renderPills();
+  } catch (err) {
+    showError('เกิดข้อผิดพลาด', err.message);
+  }
+}
+
+function showError(title, msg) {
+  document.getElementById('initialLoading').classList.add('hidden');
+  document.getElementById('errorTitle').textContent = title;
+  document.getElementById('errorMsg').textContent = msg;
+  document.getElementById('errorScreen').classList.remove('hidden');
+}
+
+// ========== LOAD DATA ==========
+async function loadStats() {
+  try {
+    const stats = await api('/admin/stats');
+
+    document.getElementById('statTodayCount').textContent = stats.today.count;
+    document.getElementById('statTodayTotal').textContent = fmtMoney(stats.today.total);
+    document.getElementById('statMonthCount').textContent = stats.month.count;
+    document.getElementById('statMonthTotal').textContent = fmtMoney(stats.month.total);
+    document.getElementById('statPending').textContent = stats.pending.count;
+
+    const wrap = document.getElementById('oldestPendingWrap');
+    if (stats.pending.oldest) {
+      document.getElementById('oldestPending').textContent = timeAgo(stats.pending.oldest);
+      wrap.style.display = '';
+    } else {
+      wrap.style.display = 'none';
+    }
+
+    const card = document.getElementById('pendingCard');
+    card.classList.toggle('pulse-pending', stats.pending.count > 0);
+
+    state.counts = stats.counts;
+    renderPills();
+  } catch (err) {
+    console.error('Load stats failed:', err);
+  }
+}
+
+async function loadOrders(reset = false) {
+  if (state.loading) return;
+  state.loading = true;
+
+  if (reset) {
+    state.page = 1;
+    state.orders = [];
+    document.getElementById('orderList').innerHTML = '';
+    document.getElementById('listLoading').classList.remove('hidden');
+  }
+
+  try {
+    const params = new URLSearchParams({
+      status: state.filter,
+      search: state.search,
+      sort: state.sort,
+      page: state.page,
+      limit: state.limit,
+    });
+    const data = await api('/admin/orders?' + params);
+
+    state.orders = reset ? data.orders : [...state.orders, ...data.orders];
+    state.hasMore = data.hasMore;
+
+    document.getElementById('listLoading').classList.add('hidden');
+    renderList();
+  } catch (err) {
+    document.getElementById('listLoading').classList.add('hidden');
+    showToast('โหลดข้อมูลล้มเหลว: ' + err.message, true);
+  } finally {
+    state.loading = false;
+  }
+}
+
+// ========== RENDER: FILTER PILLS ==========
+function renderPills() {
+  const items = [
+    { key:'all',       label:'ทั้งหมด' },
+    { key:'pending',   label:'รอดำเนินการ' },
+    { key:'confirmed', label:'ยืนยันแล้ว' },
+    { key:'shipped',   label:'จัดส่งแล้ว' },
+    { key:'completed', label:'เสร็จสิ้น' },
+    { key:'cancelled', label:'ยกเลิก' },
+  ];
+
+  document.getElementById('statusPills').innerHTML = items.map(item => {
+    const active = state.filter === item.key;
+    const cls = active
+      ? 'bg-[var(--ink)] text-white border-[var(--ink)]'
+      : 'bg-white text-[var(--ink-2)] border-[var(--border)] hover:bg-black/[.03]';
+    const dot = item.key !== 'all'
+      ? `<span class="inline-block w-1.5 h-1.5 rounded-full ${STATUSES[item.key].dot} ${active?'opacity-100':'opacity-70'}"></span>`
+      : '';
+    const count = state.counts[item.key] || 0;
+    return `
+      <button data-filter="${item.key}"
+        class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-[13px] rounded-full border transition ${cls}">
+        ${dot}
+        <span>${item.label}</span>
+        <span class="num text-[12px] ${active?'text-white/70':'text-[var(--ink-3)]'}">${count}</span>
+      </button>`;
+  }).join('');
+
+  document.querySelectorAll('[data-filter]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.filter = btn.dataset.filter;
+      renderPills();
+      loadOrders(true);
+    });
+  });
+}
+
+// ========== RENDER: ORDER LIST ==========
+function renderList() {
+  const container = document.getElementById('orderList');
+  const empty = document.getElementById('emptyState');
+  const loadMore = document.getElementById('loadMoreWrap');
+
+  if (state.orders.length === 0) {
+    container.innerHTML = '';
+    empty.classList.remove('hidden');
+    loadMore.classList.add('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+
+  container.innerHTML = state.orders.map(o => orderCard(o)).join('');
+
+  loadMore.classList.toggle('hidden', !state.hasMore);
+
+  // Wire actions
+  container.querySelectorAll('[data-action]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = +el.closest('[data-order-id]').dataset.orderId;
+      const action = el.dataset.action;
+      if (action === 'status')  openStatusSheet(id);
+      if (action === 'detail')  openDetail(id);
+      if (action === 'cancel')  confirmCancel(id);
+    });
+  });
+
+  container.querySelectorAll('[data-order-id]').forEach(card => {
+    card.addEventListener('click', () => openDetail(+card.dataset.orderId));
+  });
+}
+
+// ========== ORDER CARD ==========
+function orderCard(o) {
+  const s = STATUSES[o.status];
+  const mapsUrl = 'https://maps.google.com/?q=' + encodeURIComponent(o.customer_address);
+  return `
+  <article data-order-id="${o.id}" class="bg-white border border-[var(--border)] rounded-2xl p-4 sm:p-5 cursor-pointer hover:border-[var(--ink-3)]/50 transition">
+
+    <div class="flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2 text-[12.5px] text-[var(--ink-3)] min-w-0">
+        <span class="mono">#${o.order_code}</span>
+        <span class="text-[var(--ink-3)]/60">·</span>
+        <span class="truncate">${timeAgo(o.created_at)}</span>
+      </div>
+      <span class="${s.class} text-[12px] font-medium px-2 py-0.5 rounded-full shrink-0">${s.label}</span>
+    </div>
+
+    <div class="mt-2.5 flex items-start justify-between gap-3">
+      <div class="min-w-0">
+        <div class="font-semibold text-[15px] truncate">${o.customer_name}</div>
+        <a href="tel:${o.customer_phone}" onclick="event.stopPropagation()" class="num text-[13px] text-[var(--ink-2)] hover:text-[var(--line-green)]">${o.customer_phone}</a>
+      </div>
+      <div class="text-right shrink-0">
+        <div class="num text-[17px] font-bold leading-tight">฿${fmtMoney(o.total_price)}</div>
+        <div class="text-[12px] text-[var(--ink-3)] leading-tight">${o.quantity} ชิ้น</div>
+      </div>
+    </div>
+
+    <div class="mt-2 text-[14px] text-[var(--ink-2)] truncate">${o.product}</div>
+
+    <a href="${mapsUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()"
+       class="mt-2 inline-flex items-start gap-1.5 text-[12.5px] text-[var(--ink-3)] hover:text-[var(--ink-2)] max-w-full">
+      <svg class="shrink-0 mt-0.5" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+      </svg>
+      <span class="truncate">${o.customer_address}</span>
+    </a>
+
+    <div class="mt-3.5 pt-3.5 border-t border-[var(--border)] flex items-center gap-2">
+      ${TRANSITIONS[o.status].length > 0 ? `
+        <button data-action="status" class="flex-1 bg-[var(--line-green)] text-white text-[13.5px] font-medium py-2 rounded-lg hover:opacity-90 transition">
+          เปลี่ยนสถานะ
+        </button>` : `
+        <button disabled class="flex-1 bg-[var(--bg)] text-[var(--ink-3)] text-[13.5px] py-2 rounded-lg cursor-not-allowed border border-[var(--border)]">
+          ${o.status === 'cancelled' ? 'ยกเลิกแล้ว' : 'เสร็จแล้ว'}
+        </button>`}
+      <button data-action="detail" class="px-3 py-2 text-[13.5px] text-[var(--ink-2)] hover:bg-black/5 rounded-lg transition">
+        ดูรายละเอียด
+      </button>
+      ${o.status !== 'cancelled' && o.status !== 'completed' ? `
+        <button data-action="cancel" class="w-9 h-9 flex items-center justify-center text-[var(--ink-3)] hover:bg-red-50 hover:text-red-600 rounded-lg transition" aria-label="ยกเลิก">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+          </svg>
+        </button>` : ''}
+    </div>
+  </article>`;
+}
+
+// ========== DETAIL MODAL ==========
+function openDetail(id) {
+  const o = state.orders.find(x => x.id === id);
+  if (!o) return;
+  const s = STATUSES[o.status];
+  const mapsUrl = 'https://maps.google.com/?q=' + encodeURIComponent(o.customer_address);
+
+  document.getElementById('modalBody').innerHTML = `
+    <div class="flex items-start justify-between gap-3">
+      <div>
+        <div class="mono text-[13px] text-[var(--ink-3)]">#${o.order_code}</div>
+        <div class="text-[12.5px] text-[var(--ink-3)] mt-0.5">${new Date(o.created_at).toLocaleString('th-TH', { dateStyle:'long', timeStyle:'short' })}</div>
+      </div>
+      <span class="${s.class} text-[12px] font-medium px-2.5 py-1 rounded-full">${s.label}</span>
+    </div>
+
+    <div class="mt-5 space-y-4">
+      <div>
+        <div class="text-[12px] uppercase tracking-wider text-[var(--ink-3)] font-medium mb-1.5">ลูกค้า</div>
+        <div class="font-semibold text-[15px]">${o.customer_name}</div>
+        <a href="tel:${o.customer_phone}" class="num text-[14px] text-[var(--line-green)]">${o.customer_phone}</a>
+      </div>
+
+      <div>
+        <div class="text-[12px] uppercase tracking-wider text-[var(--ink-3)] font-medium mb-1.5">สินค้า</div>
+        <div class="flex items-baseline justify-between">
+          <div class="text-[14.5px]">${o.product}</div>
+          <div class="num text-[14px] text-[var(--ink-2)]">× ${o.quantity}</div>
+        </div>
+        <div class="mt-3 flex items-baseline justify-between pt-3 border-t border-[var(--border)]">
+          <span class="text-[14px] text-[var(--ink-2)]">ยอดรวม</span>
+          <span class="num text-[20px] font-bold">฿${fmtMoney(o.total_price)}</span>
+        </div>
+      </div>
+
+      <div>
+        <div class="text-[12px] uppercase tracking-wider text-[var(--ink-3)] font-medium mb-1.5">ที่อยู่จัดส่ง</div>
+        <div class="text-[14px] text-[var(--ink-2)] leading-relaxed">${o.customer_address}</div>
+        <a href="${mapsUrl}" target="_blank" rel="noopener" class="mt-2 inline-flex items-center gap-1.5 text-[13px] text-[var(--line-green)]">
+          เปิดใน Google Maps
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+          </svg>
+        </a>
+      </div>
+
+      ${TRANSITIONS[o.status].length > 0 ? `
+        <div class="pt-2">
+          <button onclick="closeModal(); openStatusSheet(${o.id});"
+            class="w-full bg-[var(--line-green)] text-white font-medium py-3 rounded-xl hover:opacity-90 transition">
+            เปลี่ยนสถานะ
+          </button>
+        </div>` : ''}
+    </div>
+  `;
+  document.getElementById('modal').classList.remove('hidden');
+}
+
+function closeModal() { document.getElementById('modal').classList.add('hidden'); }
+
+// ========== STATUS PICKER ==========
+function openStatusSheet(id) {
+  const o = state.orders.find(x => x.id === id);
+  if (!o) return;
+  const next = TRANSITIONS[o.status];
+  document.getElementById('statusSheetOrderInfo').textContent = `#${o.order_code} · ${o.customer_name}`;
+
+  document.getElementById('statusOptions').innerHTML = next.map(key => {
+    const s = STATUSES[key];
+    return `
+      <button data-next="${key}" class="w-full px-5 py-3.5 flex items-center justify-between hover:bg-black/[.03] transition text-left border-t border-[var(--border)]">
+        <div class="flex items-center gap-3">
+          <span class="w-2.5 h-2.5 rounded-full ${s.dot}"></span>
+          <span class="text-[15px] font-medium">${s.label}</span>
+        </div>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-[var(--ink-3)]">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+      </button>`;
+  }).join('');
+
+  document.querySelectorAll('#statusOptions [data-next]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      changeStatus(id, btn.dataset.next);
+      closeStatusSheet();
+    });
+  });
+
+  document.getElementById('statusSheet').classList.remove('hidden');
+}
+function closeStatusSheet() { document.getElementById('statusSheet').classList.add('hidden'); }
+
+// ========== CHANGE STATUS ==========
+async function changeStatus(id, newStatus) {
+  const o = state.orders.find(x => x.id === id);
+  if (!o) return;
+  const oldStatus = o.status;
+
+  // Optimistic: ลบ order ออกจาก list ถ้ามี filter (เพราะ status เปลี่ยนแล้วอาจไม่ตรง filter)
+  o.status = newStatus;
+  if (state.filter !== 'all' && newStatus !== state.filter) {
+    state.orders = state.orders.filter(x => x.id !== id);
+  }
+  renderList();
+
+  try {
+    await api(`/admin/orders/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: newStatus }),
+    });
+    showToast(`อัปเดตเป็น "${STATUSES[newStatus].label}" แล้ว`);
+    // Refresh stats + reload list (ให้แน่ใจว่า counts ใน pills ตรง)
+    await Promise.all([loadStats(), loadOrders(true)]);
+  } catch (err) {
+    // Rollback: reload จาก server
+    showToast('อัปเดตล้มเหลว: ' + err.message, true);
+    await Promise.all([loadStats(), loadOrders(true)]);
+  }
+}
+
+function confirmCancel(id) {
+  if (!confirm('ยกเลิกออเดอร์นี้ใช่หรือไม่?')) return;
+  changeStatus(id, 'cancelled');
+}
+
+// ========== TOAST ==========
+let toastTimer;
+function showToast(msg, isError = false) {
+  clearTimeout(toastTimer);
+  const t = document.getElementById('toast');
+  const box = document.getElementById('toastBox');
+  document.getElementById('toastMsg').textContent = msg;
+
+  if (isError) {
+    box.classList.remove('bg-[var(--ink)]');
+    box.classList.add('bg-red-600');
+  } else {
+    box.classList.add('bg-[var(--ink)]');
+    box.classList.remove('bg-red-600');
+  }
+
+  t.classList.remove('toast-enter');
+  t.classList.add('toast-show');
+  toastTimer = setTimeout(() => {
+    t.classList.remove('toast-show');
+    t.classList.add('toast-enter');
+  }, 2800);
+}
+
+// ========== EVENTS ==========
+const debouncedSearch = debounce(() => loadOrders(true), 400);
+document.getElementById('searchInput').addEventListener('input', (e) => {
+  state.search = e.target.value;
+  debouncedSearch();
+});
+
+document.getElementById('sortSelect').addEventListener('change', (e) => {
+  state.sort = e.target.value;
+  loadOrders(true);
+});
+
+document.getElementById('loadMoreBtn').addEventListener('click', () => {
+  state.page++;
+  loadOrders(false);
+});
+
+document.getElementById('refreshBtn').addEventListener('click', async () => {
+  await Promise.all([loadStats(), loadOrders(true)]);
+  showToast('รีเฟรชแล้ว');
+});
+
+document.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', () => { closeModal(); closeStatusSheet(); }));
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); closeStatusSheet(); } });
+
+// ========== START ==========
+init();
+</script>
+</body>
+</html>
