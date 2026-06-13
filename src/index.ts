@@ -160,7 +160,18 @@ async function handleTextMessage(event: any, env: Env): Promise<void> {
 		
 		case '#dashboard':
 		case '#แดชบอร์ด':
-			await replyMessage(replyToken, 'เปิด Dashboard:\nhttps://liff.line.me/2010382835-4SH11vbP', env);
+			// ตรวจว่าเป็น admin ไหม
+			const userId = event.source.userId;
+			const isAdmin = await env.shop_order_db.prepare(
+				'SELECT user_id FROM admins WHERE user_id = ?'
+			).bind(userId).first();
+
+			if (!isAdmin) {
+				await replyMessage(replyToken, '❌ คำสั่งนี้สำหรับ admin เท่านั้น', env);
+				return;
+			}
+
+			await replyFlex(replyToken, getDashboardLinkFlex(), env);
 			return;
 	}
 
@@ -436,20 +447,18 @@ function getGreetingFlex() {
 						style: 'primary',
 						color: '#06C755',
 						action: {
-							type: 'postback',
+							type: 'uri',
 							label: '🛒 สั่งสินค้า',
-							data: 'action=order',
-							displayText: 'สั่งสินค้า',
+							uri: 'https://liff.line.me/2010382835-nqgQ8M2r',
 						},
 					},
 					{
 						type: 'button',
 						style: 'secondary',
 						action: {
-							type: 'postback',
+							type: 'message',
 							label: '📋 ดูออเดอร์ของฉัน',
-							data: 'action=my_orders',
-							displayText: 'ดูออเดอร์ของฉัน',
+							text: '#ออเดอร์ของฉัน',
 						},
 					},
 				],
@@ -899,4 +908,53 @@ async function generateOrderCode(env: Env): Promise<string> {
 	}
 
 	throw new Error('Failed to generate unique order code after ' + MAX_ATTEMPTS + ' attempts');
+}
+
+// Flex link เปิด Dashboard
+function getDashboardLinkFlex() {
+	return {
+		type: 'flex',
+		altText: 'เปิด Dashboard',
+		contents: {
+			type: 'bubble',
+			body: {
+				type: 'box',
+				layout: 'vertical',
+				spacing: 'md',
+				contents: [
+					{
+						type: 'text',
+						text: '📊 Admin Dashboard',
+						weight: 'bold',
+						size: 'xl',
+						align: 'center',
+					},
+					{
+						type: 'text',
+						text: 'จัดการออเดอร์ ดูสถิติร้านค้า',
+						size: 'sm',
+						color: '#888888',
+						align: 'center',
+						wrap: true,
+					},
+				],
+			},
+			footer: {
+				type: 'box',
+				layout: 'vertical',
+				contents: [
+					{
+						type: 'button',
+						style: 'primary',
+						color: '#06C755',
+						action: {
+							type: 'uri',
+							label: 'เปิด Dashboard',
+							uri: 'https://liff.line.me/2010382835-4SH11vbP',
+						},
+					},
+				],
+			},
+		},
+	};
 }
