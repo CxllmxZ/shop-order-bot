@@ -14,7 +14,7 @@
 
 ### ลองด้วยตัวเอง
 
-<img src="docs/line-qr.png" alt="LINE OA QR Code" width="200">
+<img src="https://github.com/CxllmxZ/shop-order-bot/blob/main/docs/301flifo.png" alt="LINE OA QR Code" width="200">
 
 สแกน QR ด้วยแอป LINE เพื่อแอดบอท แล้วลองสั่งสินค้าได้เลย
 
