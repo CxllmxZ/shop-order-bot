@@ -144,10 +144,10 @@ async function handleTextMessage(event: any, env: Env): Promise<void> {
 	switch (text) {
 		case '#สั่งสินค้า':
 			await replyFlex(replyToken, getOrderButtonFlex(), env);
-		return;
+			return;
 
 		case '#ออเดอร์ของฉัน':
-			await replyMessage(replyToken, '📋 ฟีเจอร์นี้กำลังพัฒนา...', env);
+			await handleMyOrders(event.source.userId, replyToken, env);
 			return;
 
 		case '#ติดต่อร้าน':
@@ -700,6 +700,22 @@ function getAdminAlertFlex(orderCode: string, data: any) {
 					},
 				],
 			},
+			footer: {
+				type: 'box',
+				layout: 'vertical',
+				contents: [
+					{
+						type: 'button',
+						style: 'primary',
+						color: '#06C755',
+						action: {
+							type: 'uri',
+							label: '📊 เปิด Dashboard',
+							uri: 'https://liff.line.me/2010382835-4SH11vbP',
+						},
+					},
+				],
+			},
 		},
 	};
 }
@@ -884,9 +900,23 @@ async function handleAdminOrderUpdate(orderId: number, request: Request, env: En
 	}
 
 	// Update
+	// Update
 	await env.shop_order_db.prepare(
 		'UPDATE orders SET status = ? WHERE id = ?'
 	).bind(body.status, orderId).run();
+
+	// ดึงข้อมูลออเดอร์ + customer_user_id เพื่อ push notify
+	const updatedOrder = await env.shop_order_db.prepare(
+		'SELECT customer_user_id, order_code, product FROM orders WHERE id = ?'
+	).bind(orderId).first() as any;
+
+	if (updatedOrder) {
+		await pushFlex(
+			updatedOrder.customer_user_id,
+			getStatusUpdateFlex(updatedOrder.order_code, updatedOrder.product, body.status),
+			env
+		);
+	}
 
 	return jsonResponse({ success: true, orderId, newStatus: body.status }, 200);
 }
@@ -952,6 +982,272 @@ function getDashboardLinkFlex() {
 							label: 'เปิด Dashboard',
 							uri: 'https://liff.line.me/2010382835-4SH11vbP',
 						},
+					},
+				],
+			},
+		},
+	};
+}
+
+// ==================== MY ORDERS ====================
+
+async function handleMyOrders(userId: string, replyToken: string, env: Env): Promise<void> {
+	// ดึงออเดอร์ของ user คนนี้ทั้งหมด เรียงใหม่สุดก่อน
+	const result = await env.shop_order_db.prepare(
+		`SELECT order_code, product, quantity, total_price, status, created_at
+		 FROM orders
+		 WHERE customer_user_id = ?
+		 ORDER BY created_at DESC`
+	).bind(userId).all();
+
+	const orders = (result.results || []) as any[];
+
+	// ไม่มีออเดอร์ → empty card + ปุ่มสั่งของ
+	if (orders.length === 0) {
+		await replyFlex(replyToken, getEmptyOrdersFlex(), env);
+		return;
+	}
+
+	// แบ่งเป็น chunks ละ 12
+	const chunks: any[][] = [];
+	for (let i = 0; i < orders.length; i += 12) {
+		chunks.push(orders.slice(i, i + 12));
+	}
+
+	// Reply chunk แรก (12 ออเดอร์แรก)
+	const firstCarousel = getMyOrdersCarousel(chunks[0], 1, chunks.length);
+	await replyFlex(replyToken, firstCarousel, env);
+
+	// Push chunks ที่เหลือ
+	for (let i = 1; i < chunks.length; i++) {
+		const carousel = getMyOrdersCarousel(chunks[i], i + 1, chunks.length);
+		await pushFlex(userId, carousel, env);
+	}
+}
+
+// Flex empty (ไม่มีออเดอร์)
+function getEmptyOrdersFlex() {
+	return {
+		type: 'flex',
+		altText: 'คุณยังไม่มีออเดอร์',
+		contents: {
+			type: 'bubble',
+			body: {
+				type: 'box',
+				layout: 'vertical',
+				spacing: 'md',
+				contents: [
+					{
+						type: 'text',
+						text: '📦',
+						size: '4xl',
+						align: 'center',
+					},
+					{
+						type: 'text',
+						text: 'ยังไม่มีออเดอร์',
+						weight: 'bold',
+						size: 'lg',
+						align: 'center',
+					},
+					{
+						type: 'text',
+						text: 'สั่งสินค้าครั้งแรกได้เลย',
+						size: 'sm',
+						color: '#888888',
+						align: 'center',
+						wrap: true,
+					},
+				],
+			},
+			footer: {
+				type: 'box',
+				layout: 'vertical',
+				contents: [
+					{
+						type: 'button',
+						style: 'primary',
+						color: '#06C755',
+						action: {
+							type: 'uri',
+							label: '🛒 สั่งสินค้า',
+							uri: 'https://liff.line.me/2010382835-nqgQ8M2r',
+						},
+					},
+				],
+			},
+		},
+	};
+}
+
+// Carousel แสดงออเดอร์ของ user
+function getMyOrdersCarousel(orders: any[], pageNum: number, totalPages: number) {
+	const statusInfo: Record<string, { label: string; color: string; bg: string }> = {
+		pending:   { label: 'รอดำเนินการ', color: '#92400E', bg: '#FEF3C7' },
+		confirmed: { label: 'ยืนยันแล้ว',  color: '#1E40AF', bg: '#DBEAFE' },
+		shipped:   { label: 'จัดส่งแล้ว',  color: '#5B21B6', bg: '#EDE9FE' },
+		completed: { label: 'เสร็จสิ้น',    color: '#065F46', bg: '#D1FAE5' },
+		cancelled: { label: 'ยกเลิก',       color: '#6B7280', bg: '#F3F4F6' },
+	};
+
+	const bubbles = orders.map(o => {
+		const s = statusInfo[o.status] || statusInfo.pending;
+		const date = new Date(o.created_at).toLocaleDateString('th-TH', {
+			day: 'numeric', month: 'short', year: '2-digit'
+		});
+
+		return {
+			type: 'bubble',
+			size: 'kilo',
+			header: {
+				type: 'box',
+				layout: 'horizontal',
+				contents: [
+					{
+						type: 'text',
+						text: `#${o.order_code}`,
+						weight: 'bold',
+						size: 'md',
+						color: '#111111',
+					},
+					{
+						type: 'text',
+						text: date,
+						size: 'xs',
+						color: '#888888',
+						align: 'end',
+						gravity: 'center',
+					},
+				],
+			},
+			body: {
+				type: 'box',
+				layout: 'vertical',
+				spacing: 'sm',
+				contents: [
+					{
+						type: 'box',
+						layout: 'baseline',
+						contents: [
+							{
+								type: 'text',
+								text: s.label,
+								size: 'xs',
+								weight: 'bold',
+								color: s.color,
+							},
+						],
+						backgroundColor: s.bg,
+						paddingAll: '6px',
+						cornerRadius: '4px',
+					},
+					{
+						type: 'text',
+						text: o.product,
+						size: 'sm',
+						wrap: true,
+						margin: 'md',
+					},
+					{
+						type: 'box',
+						layout: 'horizontal',
+						margin: 'sm',
+						contents: [
+							{
+								type: 'text',
+								text: `จำนวน ${o.quantity} ชิ้น`,
+								size: 'xs',
+								color: '#888888',
+								flex: 1,
+							},
+							{
+								type: 'text',
+								text: `฿${o.total_price.toLocaleString()}`,
+								size: 'md',
+								weight: 'bold',
+								color: '#06C755',
+								align: 'end',
+								flex: 0,
+							},
+						],
+					},
+				],
+			},
+		};
+	});
+
+	return {
+		type: 'flex',
+		altText: totalPages > 1
+			? `ออเดอร์ของคุณ (${pageNum}/${totalPages})`
+			: 'ออเดอร์ของคุณ',
+		contents: {
+			type: 'carousel',
+			contents: bubbles,
+		},
+	};
+}
+
+// Flex แจ้งลูกค้าเมื่อ status เปลี่ยน
+function getStatusUpdateFlex(orderCode: string, product: string, newStatus: string) {
+	const statusInfo: Record<string, { emoji: string; label: string; color: string; bg: string; msg: string }> = {
+		confirmed: { emoji: '✅', label: 'ยืนยันแล้ว',  color: '#1E40AF', bg: '#DBEAFE', msg: 'ร้านยืนยันออเดอร์ของคุณแล้ว' },
+		shipped:   { emoji: '🚚', label: 'จัดส่งแล้ว',  color: '#5B21B6', bg: '#EDE9FE', msg: 'ออเดอร์ของคุณกำลังจัดส่ง' },
+		completed: { emoji: '🎉', label: 'เสร็จสิ้น',    color: '#065F46', bg: '#D1FAE5', msg: 'ออเดอร์ของคุณเสร็จสมบูรณ์ ขอบคุณที่ใช้บริการ!' },
+		cancelled: { emoji: '❌', label: 'ยกเลิก',       color: '#6B7280', bg: '#F3F4F6', msg: 'ออเดอร์ของคุณถูกยกเลิก หากมีข้อสงสัยติดต่อร้านได้' },
+	};
+
+	const s = statusInfo[newStatus] || statusInfo.confirmed;
+
+	return {
+		type: 'flex',
+		altText: `${s.emoji} ออเดอร์ #${orderCode} ${s.label}`,
+		contents: {
+			type: 'bubble',
+			header: {
+				type: 'box',
+				layout: 'vertical',
+				backgroundColor: s.bg,
+				paddingAll: '15px',
+				contents: [
+					{
+						type: 'text',
+						text: `${s.emoji} ${s.label}`,
+						weight: 'bold',
+						size: 'lg',
+						color: s.color,
+					},
+					{
+						type: 'text',
+						text: `ออเดอร์ #${orderCode}`,
+						size: 'sm',
+						color: s.color,
+						margin: 'sm',
+					},
+				],
+			},
+			body: {
+				type: 'box',
+				layout: 'vertical',
+				spacing: 'sm',
+				contents: [
+					{
+						type: 'text',
+						text: product,
+						size: 'sm',
+						wrap: true,
+						color: '#888888',
+					},
+					{
+						type: 'separator',
+						margin: 'md',
+					},
+					{
+						type: 'text',
+						text: s.msg,
+						size: 'sm',
+						wrap: true,
+						margin: 'md',
 					},
 				],
 			},
