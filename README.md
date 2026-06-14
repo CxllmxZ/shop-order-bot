@@ -85,7 +85,7 @@ No frameworks, no build step on frontend. Edge-deployed, sub-50ms response globa
 ## Demo
 
 - **Live LINE OA:** Coming soon (add via QR in repo)
-- **Demo video:** [Watch on YouTube](#) *(replace with actual link)*
+- **Demo video:** [Watch on YouTube](https://youtube.com/shorts/Gtz1SvxyMpU) *(replace with actual link)*
 - **Portfolio:** [project-bimav.vercel.app](https://project-bimav.vercel.app)
 
 ---
