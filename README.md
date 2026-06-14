@@ -84,8 +84,15 @@ No frameworks, no build step on frontend. Edge-deployed, sub-50ms response globa
 
 ## Demo
 
-- **Live LINE OA:** Coming soon (add via QR in repo)
-- **Demo video:** [Watch on YouTube](#) *(replace with actual link)*
+[![Demo Video](https://img.youtube.com/vi/Gtz1SvxyMpU/maxresdefault.jpg)](https://www.youtube.com/shorts/Gtz1SvxyMpU)
+
+### Try it yourself
+
+<img src="docs/line-qr.png" alt="LINE OA QR Code" width="200">
+
+Scan with LINE app to add the bot and try ordering.
+
+- **Demo video:** [Watch on YouTube](https://www.youtube.com/shorts/Gtz1SvxyMpU)
 - **Portfolio:** [project-bimav.vercel.app](https://project-bimav.vercel.app)
 
 ---

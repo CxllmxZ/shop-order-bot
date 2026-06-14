@@ -8,6 +8,21 @@
 
 ---
 
+## Demo
+
+[![Demo Video](https://img.youtube.com/vi/Gtz1SvxyMpU/maxresdefault.jpg)](https://www.youtube.com/shorts/Gtz1SvxyMpU)
+
+### ลองด้วยตัวเอง
+
+<img src="docs/line-qr.png" alt="LINE OA QR Code" width="200">
+
+สแกน QR ด้วยแอป LINE เพื่อแอดบอท แล้วลองสั่งสินค้าได้เลย
+
+- **คลิป Demo:** [ดูบน YouTube](https://www.youtube.com/shorts/Gtz1SvxyMpU)
+- **Portfolio:** [project-bimav.vercel.app](https://project-bimav.vercel.app)
+
+---
+
 ## ฟีเจอร์ที่มี
 
 ### สำหรับลูกค้า
