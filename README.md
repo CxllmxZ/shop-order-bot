@@ -88,7 +88,7 @@ No frameworks, no build step on frontend. Edge-deployed, sub-50ms response globa
 
 ### Try it yourself
 
-<img src="docs/line-qr.png" alt="LINE OA QR Code" width="200">
+<img src="[docs/line-qr.png](https://github.com/CxllmxZ/shop-order-bot/blob/main/docs/301flifo.png)" alt="LINE OA QR Code" width="200">
 
 Scan with LINE app to add the bot and try ordering.
 
